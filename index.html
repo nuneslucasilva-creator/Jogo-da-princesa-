@@ -1,0 +1,310 @@
+
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<title>A Princesa da Avenida 👑</title>
+
+<style>
+*{box-sizing:border-box}
+body{
+ margin:0;background:#14251d;color:white;
+ font-family:Arial,sans-serif;overflow:hidden;
+ touch-action:none;
+}
+#game{
+ width:100vw;height:100dvh;display:block;
+}
+#hud{
+ position:absolute;top:12px;left:10px;right:10px;
+ display:flex;justify-content:space-between;
+ pointer-events:none;gap:6px;
+}
+.info{
+ background:#14251dee;padding:12px 14px;
+ border-radius:14px;font-weight:bold;
+ border:1px solid #ffffff55;font-size:14px;
+}
+#controls{
+ position:absolute;bottom:22px;left:0;right:0;
+ display:flex;justify-content:space-between;
+ padding:0 30px;
+}
+.control{
+ width:85px;height:75px;border-radius:22px;
+ background:#ffffffdd;color:#17202b;
+ border:2px solid white;font-size:34px;
+ font-weight:bold;touch-action:none;
+}
+#overlay{
+ position:absolute;inset:0;
+ background:linear-gradient(#101a23dd,#101a23ee);
+ display:flex;align-items:center;justify-content:center;
+ padding:24px;text-align:center;
+}
+.panel{
+ background:#fff;color:#17202b;
+ border-radius:25px;padding:28px 22px;
+ width:100%;max-width:360px;
+ box-shadow:0 12px 40px #0007;
+}
+.panel h1{font-size:27px;margin:0 0 12px}
+.panel p{line-height:1.5}
+#start{
+ border:0;border-radius:15px;
+ background:#e83e76;color:white;
+ font-size:19px;font-weight:bold;
+ padding:17px 28px;width:100%;
+ margin-top:15px;
+}
+.small{font-size:13px;color:#666}
+</style>
+</head>
+
+<body>
+
+<canvas id="game"></canvas>
+
+<div id="hud">
+ <div class="info">🏆 <span id="score">0</span></div>
+ <div class="info">❤️ <span id="lives">3</span></div>
+ <div class="info">👑 JÚLIA</div>
+</div>
+
+<div id="controls">
+ <button class="control" id="left">◀</button>
+ <button class="control" id="right">▶</button>
+</div>
+
+<div id="overlay">
+ <div class="panel">
+  <h1 id="heading">👑 A Princesa da Avenida</h1>
+  <p id="message">
+   Júlia, essa aventura foi feita especialmente para você! ❤️
+   <br><br>
+   Entre no HB20 branco e atravesse a avenida desviando do trânsito!
+  </p>
+  <button id="start">INICIAR JOGO 🚗</button>
+  <p class="small">Use as setas para movimentar o carro.</p>
+ </div>
+</div>
+
+<script>
+const canvas=document.getElementById("game");
+const ctx=canvas.getContext("2d");
+
+let W,H,roadX,roadW,laneW;
+let running=false,score=0,lives=3;
+let lane=1,obstacles=[],roadLines=[];
+let last=0,spawn=0,speed=4;
+
+function resize(){
+ const dpr=Math.min(window.devicePixelRatio||1,2);
+ W=window.innerWidth;
+ H=window.innerHeight;
+ canvas.width=W*dpr;
+ canvas.height=H*dpr;
+ canvas.style.width=W+"px";
+ canvas.style.height=H+"px";
+ ctx.setTransform(dpr,0,0,dpr,0,0);
+ roadW=Math.min(W*.76,420);
+ roadX=(W-roadW)/2;
+ laneW=roadW/3;
+}
+window.addEventListener("resize",resize);
+resize();
+
+function car(x,y,color,player=false){
+ ctx.save();
+ ctx.translate(x,y);
+
+ // sombra
+ ctx.fillStyle="#0005";
+ ctx.beginPath();
+ ctx.ellipse(0,8,27,43,0,0,Math.PI*2);
+ ctx.fill();
+
+ // rodas
+ ctx.fillStyle="#151515";
+ ctx.fillRect(-28,-26,8,22);
+ ctx.fillRect(20,-26,8,22);
+ ctx.fillRect(-28,12,8,22);
+ ctx.fillRect(20,12,8,22);
+
+ // carroceria
+ ctx.fillStyle=color;
+ ctx.beginPath();
+ ctx.roundRect(-24,-40,48,80,11);
+ ctx.fill();
+
+ // teto e vidros
+ ctx.fillStyle=player?"#a8d7e9":"#343e50";
+ ctx.beginPath();
+ ctx.roundRect(-17,-25,34,27,7);
+ ctx.fill();
+
+ ctx.fillStyle="#182735";
+ ctx.beginPath();
+ ctx.roundRect(-16,8,32,22,5);
+ ctx.fill();
+
+ // faróis
+ ctx.fillStyle="#fff4b0";
+ ctx.fillRect(-18,-38,9,5);
+ ctx.fillRect(9,-38,9,5);
+
+ // lanternas
+ ctx.fillStyle="#ed3030";
+ ctx.fillRect(-18,34,10,4);
+ ctx.fillRect(8,34,10,4);
+
+ if(player){
+  ctx.fillStyle="#ffffff";
+  ctx.fillRect(-17,25,34,10);
+  ctx.fillStyle="#a80019";
+  ctx.font="bold 7px Arial";
+  ctx.textAlign="center";
+  ctx.fillText("PWS0G00",0,32);
+ }
+ ctx.restore();
+}
+
+function drawRoad(dt){
+ ctx.fillStyle="#244a30";
+ ctx.fillRect(0,0,W,H);
+
+ // prédios
+ for(let x=0;x<roadX-8;x+=48){
+  ctx.fillStyle="#52616b";
+  ctx.fillRect(x,0,38,H);
+  ctx.fillStyle="#f6d88a";
+  for(let y=20;y<H;y+=55){
+   ctx.fillRect(x+9,y,9,12);
+   ctx.fillRect(x+24,y,8,12);
+  }
+ }
+ for(let x=roadX+roadW+8;x<W;x+=48){
+  ctx.fillStyle="#52616b";
+  ctx.fillRect(x,0,38,H);
+  ctx.fillStyle="#f6d88a";
+  for(let y=20;y<H;y+=55){
+   ctx.fillRect(x+9,y,9,12);
+   ctx.fillRect(x+24,y,8,12);
+  }
+ }
+
+ ctx.fillStyle="#30343b";
+ ctx.fillRect(roadX,0,roadW,H);
+
+ ctx.fillStyle="#ffffff";
+ ctx.fillRect(roadX,0,4,H);
+ ctx.fillRect(roadX+roadW-4,0,4,H);
+
+ // faixas
+ ctx.fillStyle="#bfc4c8";
+ for(let i=1;i<=2;i++){
+  let x=roadX+laneW*i;
+  for(let y=-60;y<H;y+=100){
+   let yy=(y+(performance.now()*.001*speed*40)%100);
+   ctx.fillRect(x-2,yy,4,48);
+  }
+ }
+}
+
+function draw(){
+ drawRoad();
+
+ obstacles.forEach(o=>car(
+  roadX+laneW*(o.lane+.5),
+  o.y,o.color,false
+ ));
+
+ car(roadX+laneW*(lane+.5),H*.77,"#f5f5f5",true);
+}
+
+function update(dt){
+ if(!running)return;
+
+ score+=dt*.012;
+ speed=4+Math.min(score/35,4);
+
+ spawn+=dt;
+ if(spawn>1050){
+  spawn=0;
+  let l=Math.floor(Math.random()*3);
+  let colors=["#d83e39","#e8b43c","#4388ce","#444444"];
+  obstacles.push({
+   lane:l,y:-70,color:colors[Math.floor(Math.random()*colors.length)]
+  });
+ }
+
+ obstacles.forEach(o=>{
+  o.y+=speed*dt*.055;
+  if(!o.hit&&o.lane===lane&&
+    Math.abs(o.y-H*.77)<58){
+    o.hit=true;
+    lives--;
+    document.getElementById("lives").textContent=lives;
+    if(lives<=0)endGame();
+  }
+ });
+
+ obstacles=obstacles.filter(o=>o.y<H+100);
+
+ document.getElementById("score").textContent=Math.floor(score);
+}
+
+function loop(t){
+ let dt=Math.min(t-last,40);
+ last=t;
+ if(running)update(dt);
+ draw();
+ requestAnimationFrame(loop);
+}
+
+function moveLeft(){
+ if(running)lane=Math.max(0,lane-1);
+}
+function moveRight(){
+ if(running)lane=Math.min(2,lane+1);
+}
+
+function bindButton(id,fn){
+ const el=document.getElementById(id);
+ el.addEventListener("pointerdown",e=>{
+  e.preventDefault();fn();
+ });
+}
+bindButton("left",moveLeft);
+bindButton("right",moveRight);
+
+document.addEventListener("keydown",e=>{
+ if(e.key==="ArrowLeft")moveLeft();
+ if(e.key==="ArrowRight")moveRight();
+});
+
+function startGame(){
+ score=0;lives=3;lane=1;
+ obstacles=[];spawn=0;speed=4;
+ document.getElementById("score").textContent="0";
+ document.getElementById("lives").textContent="3";
+ document.getElementById("overlay").style.display="none";
+ running=true;
+}
+
+function endGame(){
+ running=false;
+ document.getElementById("heading").textContent="Vamos tentar novamente! ❤️";
+ document.getElementById("message").textContent=
+ "O trânsito estava complicado! Júlia, sua aventura merece mais uma tentativa.";
+ document.getElementById("start").textContent="JOGAR NOVAMENTE";
+ document.getElementById("overlay").style.display="flex";
+}
+
+document.getElementById("start").addEventListener("click",startGame);
+
+requestAnimationFrame(loop);
+</script>
+</body>
+</html>
